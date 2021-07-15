@@ -1,0 +1,6 @@
+.gitignore
+*.yaml
+*.md
+Makefile
+./bin
+Dockerfile

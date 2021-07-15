@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mekong-gateway
+  labels:
+    app: mekong-gateway
+spec:
+  selector:
+    matchLabels:
+      app: mekong-gateway
+  template:
+    metadata:
+      labels:
+        app: mekong-gateway
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: gateway
+          image: docker.transip.us/tbk-platform/mekong:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+            - containerPort: 8000
+          env:
+            - name: MEKONG_CONFIG_FILE
+              value: /etc/mekong/config.yml
+          command: ["./mekong"]
+          volumeMounts:
+            - mountPath: /etc/mekong/config.yml
+              name: mekong-config-yml
+              subPath: config.yml
+      volumes:
+        - name: mekong-config-yml
+          configMap:
+            name: mekong-gateway-config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mekong-testarea
+  labels:
+    app: mekong-testarea
+spec:
+  selector:
+    matchLabels:
+      app: mekong-testarea
+  template:
+    metadata:
+      labels:
+        app: mekong-testarea
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: testarea
+          image: hoistudio/test_area:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mekong-gateway-config
+  labels:
+    app: mekong-gateway
+data:
+  config.yml: |
+    listenPorts:
+      - :8080
+      - :8000
+    routes:
+      - path: "/api/*/store"
+        backendHost: http://mekong-testarea-service.mekong.svc.cluster.local:8080
+        methods:
+          - POST
+        rules:
+          hasQueryString: true
+          hasBody: true
+      - path: "/"
+        backendHost: http://mekong-testarea-service.mekong.svc.cluster.local:8080
+        methods:
+          - GET
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mekong-gateway-expose-service
+  labels:
+    app: mekong-gateway
+  annotations:
+    service.beta.kubernetes.io/tbk-nginx-expose-tcp: "8080,8000"
+    service.beta.kubernetes.io/tbk-nginx-class: "private"
+spec:
+  ports:
+    - name: mekong-8080
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+    - name: mekong-8000
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
+  selector:
+    app: mekong-gateway
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mekong-testarea-service
+  labels:
+    app: mekong-testarea
+  annotations:
+    service.beta.kubernetes.io/tbk-nginx-expose-tcp: "8080"
+    service.beta.kubernetes.io/tbk-nginx-class: "private"
+spec:
+  clusterIP: None
+  ports:
+    - protocol: TCP
+      targetPort: 8080
+      port: 8080
+  selector:
+    app: mekong-testarea
+---
+apiVersion: networking.k8s.io/v1beta1
+kind: Ingress
+metadata:
+  name: mekong-ingress
+  annotations:
+    kubernetes.io/ingress.class: "private"
+spec:
+  rules:
+    - host: mekong.arena.transip.us
+      http:
+        paths:
+          - path: /
+            backend:
+              serviceName: mekong-gateway-expose-service
+              servicePort: 8080
+  tls:
+    - hosts:
+        - mekong.arena.transip.us
+      secretName: cluster.default.cert
