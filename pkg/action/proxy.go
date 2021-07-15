@@ -96,7 +96,7 @@ func validateHeaders(headers *[]string, req *http.Request) error {
 }
 
 func serveReverseProxy(target string, res http.ResponseWriter, req *http.Request, debug *ConfigRouteDebug) {
-	logRequest(200, req, target)
+	logRequest(LogStatusPassed, req, target)
 
 	if debug != nil {
 		debugRequest(req, debug)
@@ -111,6 +111,7 @@ func serveReverseProxy(target string, res http.ResponseWriter, req *http.Request
 	req.URL.Host = targetURL.Host
 	req.URL.Scheme = targetURL.Scheme
 	req.Header.Set("X-Forwarded-Host", req.Header.Get("Host"))
+	req.Header.Set("X-Api-Gateway", "Mekong")
 	req.Host = targetURL.Host
 
 	proxy.ServeHTTP(res, req)
@@ -133,13 +134,22 @@ func debugRequest(r *http.Request, debug *ConfigRouteDebug) {
 	}
 }
 
-func logRequest(statusCode int, r *http.Request, b string) {
-	if statusCode == 200 {
-		log.Println(fmt.Sprintf("%s | \u001b[42;30m %d \u001B[0m | %s | \u001B[42;44m %s \u001B[0m | %s -> %s", "[MEKONG]", statusCode, r.Host, r.Method, r.URL, b))
-	} else if statusCode == 400 {
-		log.Println(fmt.Sprintf("%s | \u001b[42;41m %d \u001B[0m | %s | \u001B[42;44m %s \u001B[0m | %s", "[MEKONG]", statusCode, r.Host, r.Method, r.URL))
-	} else {
-		log.Println(fmt.Sprintf("%s | \u001b[42;41m %d \u001B[0m | %s | \u001B[42;44m %s \u001B[0m | %s", "[MEKONG]", statusCode, r.Host, r.Method, r.URL))
+type LogStatus string
+
+const (
+	LogStatusAuthRequired LogStatus = "AUTH_REQUIRED"
+	LogStatusPassed       LogStatus = "PASSED"
+	LogStatusBlocked      LogStatus = "BLOCKED"
+)
+
+func logRequest(statusCode LogStatus, r *http.Request, b string) {
+	switch statusCode {
+	case LogStatusPassed:
+		log.Println(fmt.Sprintf("%s |   \u001b[42;30m   %s  \u001B[0m   | %s | \u001B[42;44m %s \u001B[0m | %s -> %s", "[MEKONG]", statusCode+" 🚀", r.Host, r.Method, r.URL, b))
+	case LogStatusAuthRequired:
+		log.Println(fmt.Sprintf("%s | \u001b[43m %s \u001B[0m | %s | \u001B[42;44m %s \u001B[0m | %s", "[MEKONG]", statusCode+" 🛑", r.Host, r.Method, r.URL))
+	default:
+		log.Println(fmt.Sprintf("%s |   \u001b[42;41m  %s  \u001B[0m   | %s | \u001B[42;44m %s \u001B[0m | %s", "[MEKONG]", statusCode+" 🚫", r.Host, r.Method, r.URL))
 	}
 }
 
@@ -190,13 +200,13 @@ func isBasicAuthenticationAllowed(basicAuth *ConfigRouteBasicAuth, r *http.Reque
 }
 
 func blockRequest(w http.ResponseWriter, r *http.Request) {
-	logRequest(500, r, "")
+	logRequest(LogStatusBlocked, r, "")
 	w.WriteHeader(500)
 	w.Write([]byte("Access denied"))
 }
 
 func authBlockRequest(w http.ResponseWriter, r *http.Request) {
-	logRequest(401, r, "")
+	logRequest(LogStatusAuthRequired, r, "")
 	w.WriteHeader(401)
 	w.Write([]byte("Unauthorised"))
 	return
