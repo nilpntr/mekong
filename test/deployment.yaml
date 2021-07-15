@@ -19,7 +19,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: gateway
-          image: docker.transip.us/tbk-platform/mekong:latest
+          image: sammobach/mekong:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -27,7 +27,6 @@ spec:
           env:
             - name: MEKONG_CONFIG_FILE
               value: /etc/mekong/config.yml
-          command: ["./mekong"]
           volumeMounts:
             - mountPath: /etc/mekong/config.yml
               name: mekong-config-yml
@@ -58,7 +57,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: testarea
-          image: hoistudio/test_area:latest
+          image: sammobach/gin-test:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -75,7 +74,7 @@ data:
       - :8080
       - :8000
     routes:
-      - path: "/api/*/store"
+      - path: "/"
         backendHost: http://mekong-testarea-service.mekong.svc.cluster.local:8080
         methods:
           - POST
@@ -93,9 +92,6 @@ metadata:
   name: mekong-gateway-expose-service
   labels:
     app: mekong-gateway
-  annotations:
-    service.beta.kubernetes.io/tbk-nginx-expose-tcp: "8080,8000"
-    service.beta.kubernetes.io/tbk-nginx-class: "private"
 spec:
   ports:
     - name: mekong-8080
@@ -115,9 +111,6 @@ metadata:
   name: mekong-testarea-service
   labels:
     app: mekong-testarea
-  annotations:
-    service.beta.kubernetes.io/tbk-nginx-expose-tcp: "8080"
-    service.beta.kubernetes.io/tbk-nginx-class: "private"
 spec:
   clusterIP: None
   ports:
@@ -131,11 +124,9 @@ apiVersion: networking.k8s.io/v1beta1
 kind: Ingress
 metadata:
   name: mekong-ingress
-  annotations:
-    kubernetes.io/ingress.class: "private"
 spec:
   rules:
-    - host: mekong.arena.transip.us
+    - host: mekong.test.us
       http:
         paths:
           - path: /
@@ -144,5 +135,5 @@ spec:
               servicePort: 8080
   tls:
     - hosts:
-        - mekong.arena.transip.us
+        - mekong.test.us
       secretName: cluster.default.cert
