@@ -7,6 +7,7 @@ A lightweight api gateway written in golang.
 |---------------|------------------------------------------------------|----------|
 | `listenPorts` | A list of strings that listens for incoming requests | `true`   |
 | `routes`      | A list of routes                                     | `true`   |
+| `heartbeat`    A list of heartbeat routes                            | `true`   |
 
 
 ### Routes
@@ -22,6 +23,14 @@ A lightweight api gateway written in golang.
 | `rules`                        | Keys: the rules for a request                                          | false    |
 | `rules.hasQueryString`         | Boolean: if the request must not have or must have query strings       | false    |
 | `rules.hasBody`                | Boolean: if the request must not have or must have a body              | false    |
+
+### Heartbeat
+| Parameter       | Description                                                            | Required |
+|-----------------|------------------------------------------------------------------------|----------|
+| `path`          | String: the path, it supports wildcard paths like this: `/heartbeat/*` | true     |
+| `response_code` | Int: the response code, default is 200                                 | false    |
+| `message`       | String: the body of the response, default is empty                     | false    |
+
 
 ### Example
 ```

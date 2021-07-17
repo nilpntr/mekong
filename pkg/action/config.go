@@ -10,8 +10,15 @@ import (
 
 type Config struct {
 	// The host of the backend to be redirected to
-	ListenPorts []string       `yaml:"listenPorts"`
-	Routes      []ConfigRoutes `yaml:"routes"`
+	ListenPorts []string           `yaml:"listenPorts"`
+	Routes      []ConfigRoutes     `yaml:"routes"`
+	Heartbeat   *[]ConfigHeartbeat `yaml:"heartbeat,omitempty"`
+}
+
+type ConfigHeartbeat struct {
+	Path         string  `yaml:"path"`
+	ResponseCode *int    `yaml:"response_code,omitempty"`
+	Message      *string `yaml:"message,omitempty"`
 }
 
 type ConfigRoutes struct {

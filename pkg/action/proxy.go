@@ -27,36 +27,42 @@ func newProxyServer(config *Config) *ProxyServer {
 }
 
 func (p *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	matchingURL := p.getMatchingURL(r.URL.Path)
-	if matchingURL == nil {
-		blockRequest(w, r)
-		return
-	} else {
-		if isMethodAllowed(r.Method, matchingURL.Methods) {
-			if !isBasicAuthenticationAllowed(matchingURL.BasicAuthentication, r) {
-				authBlockRequest(w, r)
-				return
-			} else {
-				if err := validateRules(matchingURL.Rules, r); err != nil {
-					blockRequest(w, r)
+	heartbeatURL := p.getHeartbeatUrl(r.URL.Path)
+	if heartbeatURL == nil {
+		matchingURL := p.getMatchingURL(r.URL.Path)
+		if matchingURL == nil {
+			blockRequest(w, r)
+			return
+		} else {
+			if isMethodAllowed(r.Method, matchingURL.Methods) {
+				if !isBasicAuthenticationAllowed(matchingURL.BasicAuthentication, r) {
+					authBlockRequest(w, r)
 					return
 				} else {
-					if err := validateHeaders(matchingURL.Headers, r); err != nil {
-						if matchingURL.Debug != nil && matchingURL.Debug.Headers != nil && *matchingURL.Debug.Headers == true {
-							log.Println(err)
-						}
+					if err := validateRules(matchingURL.Rules, r); err != nil {
 						blockRequest(w, r)
 						return
 					} else {
-						serveReverseProxy(fmt.Sprintf("%s%s", matchingURL.BackendHost, matchingURL.Path), w, r, matchingURL.Debug)
-						return
+						if err := validateHeaders(matchingURL.Headers, r); err != nil {
+							if matchingURL.Debug != nil && matchingURL.Debug.Headers != nil && *matchingURL.Debug.Headers == true {
+								log.Println(err)
+							}
+							blockRequest(w, r)
+							return
+						} else {
+							serveReverseProxy(fmt.Sprintf("%s%s", matchingURL.BackendHost, matchingURL.Path), w, r, matchingURL.Debug)
+							return
+						}
 					}
 				}
+			} else {
+				blockRequest(w, r)
+				return
 			}
-		} else {
-			blockRequest(w, r)
-			return
 		}
+	} else {
+		heartbeatRequest(w, r, heartbeatURL)
+		return
 	}
 }
 
@@ -140,6 +146,7 @@ const (
 	LogStatusAuthRequired LogStatus = "AUTH_REQUIRED"
 	LogStatusPassed       LogStatus = "PASSED"
 	LogStatusBlocked      LogStatus = "BLOCKED"
+	LogStatusHeartbeat    LogStatus = "HEARTBEAT"
 )
 
 func logRequest(statusCode LogStatus, r *http.Request, b string) {
@@ -148,6 +155,8 @@ func logRequest(statusCode LogStatus, r *http.Request, b string) {
 		log.Println(fmt.Sprintf("%s |   \u001b[42;30m   %s  \u001B[0m   | %s | \u001B[42;44m %s \u001B[0m | %s -> %s", "[MEKONG]", statusCode+" 🚀", r.Host, r.Method, r.URL, b))
 	case LogStatusAuthRequired:
 		log.Println(fmt.Sprintf("%s | \u001b[43m %s \u001B[0m | %s | \u001B[42;44m %s \u001B[0m | %s", "[MEKONG]", statusCode+" 🛑", r.Host, r.Method, r.URL))
+	case LogStatusHeartbeat:
+		log.Println(fmt.Sprintf("%s |  \u001b[47m  %s  \u001B[0m  | %s | \u001B[42;44m %s \u001B[0m | %s", "[MEKONG]", statusCode+" 💓", r.Host, r.Method, r.URL))
 	default:
 		log.Println(fmt.Sprintf("%s |   \u001b[42;41m  %s  \u001B[0m   | %s | \u001B[42;44m %s \u001B[0m | %s", "[MEKONG]", statusCode+" 🚫", r.Host, r.Method, r.URL))
 	}
@@ -155,6 +164,18 @@ func logRequest(statusCode LogStatus, r *http.Request, b string) {
 
 func (p *ProxyServer) getMatchingURL(path string) *ConfigRoutes {
 	for _, elem := range p.Config.Routes {
+		if matchSplitURL(strings.Split(path, "/"), strings.Split(elem.Path, "/")) {
+			return &elem
+		}
+	}
+	return nil
+}
+
+func (p *ProxyServer) getHeartbeatUrl(path string) *ConfigHeartbeat {
+	if p.Config.Heartbeat == nil {
+		return nil
+	}
+	for _, elem := range *p.Config.Heartbeat {
 		if matchSplitURL(strings.Split(path, "/"), strings.Split(elem.Path, "/")) {
 			return &elem
 		}
@@ -209,5 +230,18 @@ func authBlockRequest(w http.ResponseWriter, r *http.Request) {
 	logRequest(LogStatusAuthRequired, r, "")
 	w.WriteHeader(401)
 	w.Write([]byte("Unauthorised"))
+	return
+}
+
+func heartbeatRequest(w http.ResponseWriter, r *http.Request, ch *ConfigHeartbeat) {
+	logRequest(LogStatusHeartbeat, r, "")
+	if ch.ResponseCode == nil {
+		w.WriteHeader(200)
+	} else {
+		w.WriteHeader(*ch.ResponseCode)
+	}
+	if ch.Message != nil {
+		w.Write([]byte(*ch.Message))
+	}
 	return
 }
