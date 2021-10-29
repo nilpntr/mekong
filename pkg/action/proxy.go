@@ -5,22 +5,40 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"github.com/getsentry/sentry-go"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // The basic proxy type. Implements http.Handler.
 type ProxyServer struct {
 	Config *Config
+	Dialer *net.Dialer
 }
 
 func newProxyServer(config *Config) *ProxyServer {
+	timeout, keepAlive := 10, 10
+	if config.Server != nil {
+		if config.Server.Timeout != nil {
+			timeout = *config.Server.Timeout
+		}
+		if config.Server.KeepAlive != nil {
+			keepAlive = *config.Server.KeepAlive
+		}
+	}
+
 	proxy := ProxyServer{
 		Config: config,
+		Dialer: &net.Dialer{
+			Timeout:   time.Duration(timeout) * time.Second,
+			KeepAlive: time.Duration(keepAlive) * time.Second,
+		},
 	}
 
 	return &proxy
@@ -50,7 +68,11 @@ func (p *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							blockRequest(w, r)
 							return
 						} else {
-							serveReverseProxy(fmt.Sprintf("%s%s", matchingURL.BackendHost, matchingURL.Path), w, r, matchingURL.Debug)
+							logProxy := false
+							if p.Config.Sentry != nil && p.Config.Sentry.LogProxy != nil {
+								logProxy = *p.Config.Sentry.LogProxy
+							}
+							serveReverseProxy(fmt.Sprintf("%s%s", matchingURL.BackendHost, matchingURL.Path), w, r, matchingURL.Debug, logProxy, p.Dialer)
 							return
 						}
 					}
@@ -101,7 +123,7 @@ func validateHeaders(headers *[]string, req *http.Request) error {
 	}
 }
 
-func serveReverseProxy(target string, res http.ResponseWriter, req *http.Request, debug *ConfigRouteDebug) {
+func serveReverseProxy(target string, res http.ResponseWriter, req *http.Request, debug *ConfigRouteDebug, logProxy bool, dialer *net.Dialer) {
 	logRequest(LogStatusPassed, req, target)
 
 	if debug != nil {
@@ -113,6 +135,19 @@ func serveReverseProxy(target string, res http.ResponseWriter, req *http.Request
 	targetURL.Path = ""
 
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	proxy.Transport = &http.Transport{
+		DialContext: dialer.DialContext,
+	}
+	proxy.ErrorHandler = func(rw http.ResponseWriter, request *http.Request, err error) {
+		if logProxy {
+			sentry.CaptureException(err)
+		}
+		rw.WriteHeader(http.StatusInternalServerError)
+		rw.Write([]byte(err.Error()))
+		if debug != nil {
+			log.Println(err)
+		}
+	}
 
 	req.URL.Host = targetURL.Host
 	req.URL.Scheme = targetURL.Scheme
@@ -132,6 +167,7 @@ func debugRequest(r *http.Request, debug *ConfigRouteDebug) {
 			log.Println(r.Header)
 		}
 		if debug.Body != nil && *debug.Body == true {
+			defer r.Body.Close()
 			buf, err := ioutil.ReadAll(r.Body)
 			if err == nil {
 				log.Println(ioutil.NopCloser(bytes.NewBuffer(buf)))

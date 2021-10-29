@@ -9,10 +9,19 @@ import (
 )
 
 type Config struct {
-	// The host of the backend to be redirected to
 	ListenPorts []string           `yaml:"listenPorts"`
+	Sentry      *ConfigSentry      `yaml:"sentry,omitempty"`
 	Routes      []ConfigRoutes     `yaml:"routes"`
 	Heartbeat   *[]ConfigHeartbeat `yaml:"heartbeat,omitempty"`
+	Server      *ConfigServer      `yaml:"server,omitempty"`
+}
+
+type ConfigSentry struct {
+	Dsn         string  `yaml:"dsn,omitempty"`
+	Environment *string `yaml:"environment,omitempty"`
+	Release     *string `yaml:"release,omitempty"`
+	Debug       *bool   `yaml:"debug,omitempty"`
+	LogProxy    *bool   `yaml:"log_proxy,omitempty"`
 }
 
 type ConfigHeartbeat struct {
@@ -45,6 +54,11 @@ type ConfigRouteBasicAuth struct {
 type ConfigRouteRules struct {
 	HasQueryString *bool `yaml:"hasQueryString,omitempty"`
 	HasBody        *bool `yaml:"hasBody,omitempty"`
+}
+
+type ConfigServer struct {
+	Timeout   *int `yaml:"timeout,omitempty"`
+	KeepAlive *int `yaml:"keep_alive,omitempty"`
 }
 
 func newConfig(configPath string) (*Config, error) {
